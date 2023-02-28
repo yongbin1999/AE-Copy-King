@@ -4,43 +4,88 @@ if (!jsonFolder.exists) {
   jsonFolder.create();
 }
 
-var win = new Window("window", "复制大王_YB_1.0", undefined, { resizeable: true, closeButton: true });
-win.alignChildren = "fill";
+var panelGlobal = this;
+var win = (panelGlobal instanceof Panel) ? panelGlobal : new Window("palette");
+if (!(panelGlobal instanceof Panel)) win.text = "复制大王_YB_1.1";
+win.orientation = "column";
+win.alignChildren = ["fill", "top"];
+win.spacing = 10;
+win.margins = 16;
 
-// 增加搜索框
+// 添加搜索框
 var searchPanel = win.add("panel", undefined, "搜索");
 searchPanel.alignment = ["fill", "top"];
 searchPanel.alignChildren = ["fill", "center"];
 var searchInput = searchPanel.add("edittext", undefined, "");
 searchInput.active = true;
 
+// 添加文件列表
 var fileList = win.add("listbox", [0, 0, 200, 300], []);
+fileList.itemSize = ["fill", 35];
+fileList.alignment = ["fill", "fill"];
+fileList.alignChildren = ["fill", "center"];
+fileList.autoSize = true;
+
+// 添加操作按钮
 var buttonGroup = win.add("group");
 buttonGroup.alignment = ["fill", "bottom"];
 buttonGroup.alignChildren = ["fill", "center"];
 var refreshBtn = buttonGroup.add("button", undefined, "刷新列表");
-var readBtn = buttonGroup.add("button", undefined, "读取JSON");
-var saveBtn = buttonGroup.add("button", undefined, "保存JSON");
-var deleteBtn = buttonGroup.add("button", undefined, "删除JSON");
-var renameBtn = buttonGroup.add("button", undefined, "重命名JSON");
+var readBtn = buttonGroup.add("button", undefined, "读取配置");
+var saveBtn = buttonGroup.add("button", undefined, "保存配置");
+var deleteBtn = buttonGroup.add("button", undefined, "删除配置");
+var renameBtn = buttonGroup.add("button", undefined, "重命名配置");
 
 readBtn.onClick = loadJSON;
 saveBtn.onClick = saveJSON;
 fileList.onDoubleClick = loadJSON;
 
-win.show();
-
-
 updateFileList("");
 
-//刷新按钮
+// 刷新按钮
 refreshBtn.onClick = function () {
   updateFileList(searchInput.text);
+  fileList.selection = 0;
 }
 
 // 监听搜索框输入
 searchInput.onChanging = function () {
   updateFileList(searchInput.text);
+}
+
+
+
+
+
+
+// 刷新列表
+function updateFileList(searchText) {
+  var selectedIdx = fileList.selection !== null ? fileList.selection.index : -1;
+  fileList.removeAll();
+  var files = jsonFolder.getFiles("*.json");
+  for (var i = 0; i < files.length; i++) {
+    var fileName = decodeURI(files[i].name);
+    if (fileName.indexOf(searchText) !== -1) {
+      var displayName = fileName.replace(".json", "");
+      fileList.add("item", displayName, fileName);
+    }
+  }
+
+  // 选中下一个列表项
+  if (selectedIdx >= 0 && fileList.items.length > 0) {
+    var nextIdx = -1;
+    for (var i = 0; i < fileList.items.length; i++) {
+      if (fileList.items[i].index === selectedIdx) {
+        nextIdx = (i + 1) % fileList.items.length;
+        break;
+      }
+    }
+    if (nextIdx >= 0) {
+      fileList.selection = fileList.items[nextIdx];
+    } else {
+      fileList.selection = 0;
+    }
+  }
 }
 
 //删除JSON
@@ -50,13 +95,25 @@ deleteBtn.onClick = function () {
     alert("请选择文件！");
     return;
   }
+
+  // 获取当前选中的列表项索引
+  var currentIndex = fileList.selection.index;
+
   var jsonFile = new File(decodeURI(jsonFolder.fsName) + "/" + encodeURI(selectedFile.text + ".json"));
   var confirmResult = confirm("是否确定删除文件 " + decodeURI(jsonFile.name) + " ?");
   if (confirmResult) {
     jsonFile.close(); // 关闭文件对象
     jsonFile.remove(); // 删除文件
-    updateFileList(searchInput.text); // 更新文件列表
-    //alert("文件删除成功！");
+
+
+    // 更新文件列表
+    updateFileList(searchInput.text);
+
+    // 选中下一个列表项
+    if (fileList.items.length > 0) {
+      var nextIndex = currentIndex % fileList.items.length;
+      fileList.selection = nextIndex;
+    }
   }
 }
 
@@ -94,19 +151,6 @@ renameBtn.onClick = function () {
 
   jsonFile.rename(decodeURI(newName)); // 重命名文件
   updateFileList(searchInput.text); // 更新文件列表
-}
-
-// 刷新列表
-function updateFileList(searchText) {
-  fileList.removeAll();
-  var files = jsonFolder.getFiles("*.json");
-  for (var i = 0; i < files.length; i++) {
-    var fileName = decodeURI(files[i].name);
-    if (fileName.indexOf(searchText) !== -1) {
-      var displayName = fileName.replace(".json", "");
-      fileList.add("item", displayName, fileName);
-    }
-  }
 }
 
 //读取JSON
@@ -344,8 +388,27 @@ function isArray(obj) {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+// UI 结束区（展示）
+win.layout.layout(true);
+win.layout.resize();
+win.onResizing = win.onResize = function () { this.layout.resize(); }
+if (win instanceof Window) win.show();
+
+
 /*
 
-由YB与chat.openai.com共同打造
+此AE脚本代码由YB和ChatGPT共同完成
 
 */
