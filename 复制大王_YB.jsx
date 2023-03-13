@@ -1,12 +1,15 @@
+// 获取脚本文件所在文件夹路径
 var scriptFolder = $.fileName.split("/").slice(0, -1).join("/") + "/";
-var jsonFolder = new Folder(scriptFolder + "复制大王_YB_JSON");
+// 创建用于保存JSON文件的文件夹对象
+var jsonFolder = new Folder(scriptFolder + "Copy_King_YB" + "/" + "Copy_King_JSON");
 if (!jsonFolder.exists) {
   jsonFolder.create();
 }
 
+// 获取脚本面板对象或创建一个新窗口面板对象
 var panelGlobal = this;
 var win = (panelGlobal instanceof Panel) ? panelGlobal : new Window("palette");
-if (!(panelGlobal instanceof Panel)) win.text = "复制大王_YB_1.1";
+if (!(panelGlobal instanceof Panel)) win.text = "复制大王_YB_1.2";
 win.orientation = "column";
 win.alignChildren = ["fill", "top"];
 win.spacing = 10;
@@ -18,6 +21,23 @@ searchPanel.alignment = ["fill", "top"];
 searchPanel.alignChildren = ["fill", "center"];
 var searchInput = searchPanel.add("edittext", undefined, "");
 searchInput.active = true;
+searchInput.alignment = ["fill", "center"];
+
+// 添加文件夹和设置按钮
+var folderBtn, settingsBtn, aboutBtn;
+var topGroup = win.add("group");
+topGroup.alignment = ["fill", "top"];
+topGroup.alignChildren = ["left", "top"];
+
+folderBtn = topGroup.add("button", undefined, "文件夹");
+folderBtn.size = [50, 20];
+folderBtn.alignment = ["left", "center"];
+settingsBtn = topGroup.add("button", undefined, "设置");
+settingsBtn.size = [50, 20];
+settingsBtn.alignment = ["left", "center"];
+aboutBtn = topGroup.add("button", undefined, "关于");
+aboutBtn.size = [50, 20];
+aboutBtn.alignment = ["left", "center"];
 
 // 添加文件列表
 var fileList = win.add("listbox", [0, 0, 200, 300], []);
@@ -46,17 +66,18 @@ updateFileList("");
 refreshBtn.onClick = function () {
   updateFileList(searchInput.text);
   fileList.selection = 0;
+  fileList.selection = null;
+
+  app.cancelTask(); // 取消当前任务
+  var scriptFile = new File($.fileName);
+  $.evalFile(scriptFile); // 重新加载当前脚本文件
+
 }
 
 // 监听搜索框输入
 searchInput.onChanging = function () {
   updateFileList(searchInput.text);
 }
-
-
-
-
-
 
 // 刷新列表
 function updateFileList(searchText) {
@@ -86,7 +107,68 @@ function updateFileList(searchText) {
       fileList.selection = 0;
     }
   }
+
+  $.gc();
+
 }
+
+// 文件夹按钮
+folderBtn.onClick = function () {
+  // 如果脚本列表为空，打开jsonFolder文件夹
+  if (fileList.items.length == 0) {
+    jsonFolder.execute();
+    return;
+  }
+  // 检查是否选中的列表行
+  if (fileList.selection == null) {
+    // 检查是否选中了一个合法的图层
+    var activeComp = app.project.activeItem;
+    if (activeComp != null && activeComp instanceof CompItem) {
+      var selectedLayers = activeComp.selectedLayers;
+      if (selectedLayers.length > 0) {
+        var selectedLayer = selectedLayers[0];
+        // 检查图层是否有源素材
+        if (selectedLayer.source != null && selectedLayer.source.file != null) {
+          var sourceFile = selectedLayer.source.file;
+          // 检查是否为素材文件
+          if (sourceFile instanceof File && sourceFile.exists) {
+            sourceFile.parent.execute();
+            return;
+          }
+        }
+      }
+    }
+    // 检查是否选中了项目中的素材文件
+    var selectedItems = app.project.selection;
+    if (selectedItems.length > 0) {
+      var selectedItem = selectedItems[0];
+      if (selectedItem instanceof FootageItem && selectedItem.file instanceof File && selectedItem.file.exists) {
+        selectedItem.file.parent.execute();
+        return;
+      }
+    }
+    // 检查当前项目文件是否保存
+    if (app.project.file == null) {
+      jsonFolder.execute();
+    } else {
+      var projectFolder = new Folder(app.project.file.parent.fsName);
+      projectFolder.execute();
+    }
+  } else {
+    jsonFolder.execute();
+  }
+};
+
+// 设置按钮
+settingsBtn.onClick = function () {
+  // 创建设置窗口
+  var settingsWin = new Window("dialog", "脚本设置(预计下个版本更新)");
+  settingsWin.bounds = [100, 100, 800, 500]; // 设置窗口的大小和位置
+
+  // 显示设置窗口
+  settingsWin.show();
+
+};
 
 //删除JSON
 deleteBtn.onClick = function () {
@@ -167,7 +249,7 @@ function loadJSON() {
 
   var selectedFile = fileList.selection;
   if (!selectedFile) {
-    alert("请选择文件！");
+    alert("请选择列！");
     return;
   }
 
@@ -216,11 +298,14 @@ function loadJSON() {
       }
     }
 
-
     alert("已应用图层数据到所选合成中。");
   }
+
   app.endUndoGroup();
 
+  app.cancelTask(); // 取消当前任务
+  var scriptFile = new File($.fileName);
+  $.evalFile(scriptFile); // 重新加载当前脚本文件
 
 }
 
@@ -299,6 +384,10 @@ function saveJSON() {
 
   app.endUndoGroup();
 
+  app.cancelTask(); // 取消当前任务
+  var scriptFile = new File($.fileName);
+  $.evalFile(scriptFile); // 重新加载当前脚本文件
+
 }
 
 // 获取特效参数
@@ -310,8 +399,16 @@ function getEffectParameters(effect, index) {
       index: i,
       name: prop.name,
       type: prop.propertyValueType,
-      value: null
+      value: null,
+      keyframes: [], // 用于存储关键帧
+      expression: '' // 用于存储表达式
     };
+    // 获取表达式
+    try {
+      param.expression = prop.expression;
+    } catch (e) {
+      // 表达式解析失败
+    }
     switch (prop.propertyValueType) {
       case PropertyValueType.NO_VALUE:
         break;
@@ -319,9 +416,31 @@ function getEffectParameters(effect, index) {
       case PropertyValueType.TwoD:
       case PropertyValueType.ThreeD:
         param.value = prop.value;
+        // 存储关键帧
+        if (prop.numKeys > 0) {
+          for (var j = 1; j <= prop.numKeys; j++) {
+            var keyframe = {
+              time: prop.keyTime(j),
+              value: prop.keyValue(j),
+              interpolationType: prop.keyInInterpolationType(j) + ', ' + prop.keyOutInterpolationType(j)
+            };
+            param.keyframes.push(keyframe);
+          }
+        }
         break;
       case PropertyValueType.COLOR:
         param.value = [prop.value[0], prop.value[1], prop.value[2]];
+        // 存储关键帧
+        if (prop.numKeys > 0) {
+          for (var j = 1; j <= prop.numKeys; j++) {
+            var keyframe = {
+              time: prop.keyTime(j),
+              value: prop.keyValue(j),
+              interpolationType: prop.keyInInterpolationType(j) + ', ' + prop.keyOutInterpolationType(j)
+            };
+            param.keyframes.push(keyframe);
+          }
+        }
         break;
       case PropertyValueType.CUSTOM_VALUE:
         try {
@@ -347,6 +466,7 @@ function setEffectParameters(effect, parameters) {
       var param = effect.property(paramIndex);
       if (param) {
         var paramValue = paramData.value;
+        var keyframes = paramData.keyframes;
         try {
           if (isArray(paramValue)) {
             if (paramValue[0] && paramValue[0].hasOwnProperty("channel")) {
@@ -373,38 +493,85 @@ function setEffectParameters(effect, parameters) {
           } else if (typeof paramValue === 'string') {
             param.setValue(paramValue);
           }
-        } catch (e) {
-          // 如果出现错误就跳过该参数，并在控制台中输出相关信息
+          // 先清除所有关键帧
+          for (var j = param.numKeys; j >= 1; j--) {
+            param.removeKey(j);
+          }
 
+          // 清空表达式
+          param.expression = "";
+          param.setValue(paramValue);
+
+          // 设置关键帧
+          for (var k = 0; k < keyframes.length; k++) {
+            var keyframe = keyframes[k];
+            var time = keyframe.time;
+            var value = keyframe.value;
+            var inInterpolationType = parseInt(keyframe.interpolationType.split(',')[0]);
+            var outInterpolationType = parseInt(keyframe.interpolationType.split(',')[1]);
+            param.addKey(time);
+            param.setValueAtTime(time, value);
+            var keyIndex = param.nearestKeyIndex(time);
+            var inInterpolation = getInterpolationType(inInterpolationType);
+            var outInterpolation = getInterpolationType(outInterpolationType);
+            param.setInterpolationTypeAtKey(keyIndex, inInterpolation, outInterpolation);
+          }
+
+          // 设置新的表达式
+          if (paramData.expression !== "") {
+            param.expression = paramData.expression;
+          }
+
+          // 设置参数值
+          param.setValue(paramValue);
+
+          function getInterpolationType(type) {
+            switch (type) {
+              case 6612:
+                return KeyframeInterpolationType.LINEAR;
+              case 6613:
+                return KeyframeInterpolationType.BEZIER;
+              case 6614:
+                return KeyframeInterpolationType.HOLD;
+              default:
+                return KeyframeInterpolationType.LINEAR;
+            }
+          }
+
+        } catch (e) {
+          // 如果出现错误就跳过该参数
         }
       }
     }
   }
 }
 
-//isArray()
+//isArray函数
 function isArray(obj) {
-  return Object.prototype.toString.call(obj) === '[object Array]';
+  return obj && typeof obj === 'object' &&
+    (Object.prototype.toString.call(obj) === '[object Array]' ||
+      obj.constructor === Array);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
+//关于按钮
+aboutBtn.onClick = function () {
+  var url = "https://github.com/yongbin1999/AE-Copy-King";
+  $.writeln(system.osName);
+  if ($.os.indexOf("Windows") != -1) {
+    //Windows系统
+    system.callSystem("cmd.exe /c\"start " + url + "\"");
+  } else {
+    //MAC系统
+    system.callSystem("open http://" + url + "\"");
+  }
+};
 
 // UI 结束区（展示）
 win.layout.layout(true);
 win.layout.resize();
 win.onResizing = win.onResize = function () { this.layout.resize(); }
 if (win instanceof Window) win.show();
+
 
 
 /*
