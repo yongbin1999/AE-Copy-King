@@ -9,7 +9,7 @@ if (!jsonFolder.exists) {
 // 获取脚本面板对象或创建一个新窗口面板对象
 var panelGlobal = this;
 var win = (panelGlobal instanceof Panel) ? panelGlobal : new Window("palette");
-if (!(panelGlobal instanceof Panel)) win.text = "复制大王_YB_1.2";
+if (!(panelGlobal instanceof Panel)) win.text = "复制大王_YB_1.3";
 win.orientation = "column";
 win.alignChildren = ["fill", "top"];
 win.spacing = 10;
@@ -235,80 +235,6 @@ renameBtn.onClick = function () {
   updateFileList(searchInput.text); // 更新文件列表
 }
 
-//读取JSON
-function loadJSON() {
-  app.beginUndoGroup("读取JSON");
-
-  // 获取选中的图层
-  var selectedLayers = app.project.activeItem.selectedLayers;
-  if (selectedLayers.length === 0) {
-    alert("请选择至少一个图层。");
-    return;
-  }
-
-
-  var selectedFile = fileList.selection;
-  if (!selectedFile) {
-    alert("请选择列！");
-    return;
-  }
-
-  // 读取JSON文件中的图层信息
-  var loadFile = new File(jsonFolder.fsName + "/" + encodeURI(selectedFile.text + ".json"));
-  if (loadFile != null) {
-    loadFile.encoding = "UTF8";
-    loadFile.open("r");
-    var jsonData = loadFile.read();
-    var layers = JSON.parse(jsonData);
-    loadFile.close();
-
-    // 应用图层信息和特效参数
-    for (var i = 0; i < selectedLayers.length; i++) {
-      var layer = selectedLayers[i];
-      var layerData = layers[i];
-      layer.name = layerData.layerName;
-      layer.blendingMode = layerData.blendingMode;
-      layer.trackMatteType = layerData.trackMatteType;
-      layer.transform.opacity.setValue(layerData.opacity);
-      layer.enabled = !layerData.isHidden;
-      layer.transform.scale.setValue([layerData.scale[0], layerData.scale[1]]);
-      if (layerData.hasMask && layer.mask instanceof MaskPropertyGroup) {
-        //layer.mask.maskPath.setValue(layerData.maskPath);
-        // 可以在这里设置mask的其他属性
-      }
-      for (var j = 0; j < layerData.effects.length; j++) {
-        var effectData = layerData.effects[j];
-        var effects = effectData.effects;
-        var effectName = effectData.effectName;
-        var effectEnabled = effectData.effectEnabled;
-        var effect = layer.property("ADBE Effect Parade").property(effectName);
-        if (!effect) {
-          effect = layer.property("ADBE Effect Parade").addProperty(effects);
-          effect.name = effectName;
-        }
-        effect.enabled = effectEnabled;
-        setEffectParameters(effect, effectData.effectParameters);
-      }
-
-      // 移动图层到指定的位置
-      try {
-        layer.moveTo(layerData.layerIndex);
-      } catch (e) {
-        // 忽略可能出现的错误
-      }
-    }
-
-    alert("已应用图层数据到所选合成中。");
-  }
-
-  app.endUndoGroup();
-
-  app.cancelTask(); // 取消当前任务
-  var scriptFile = new File($.fileName);
-  $.evalFile(scriptFile); // 重新加载当前脚本文件
-
-}
-
 //保存JSON
 function saveJSON() {
   app.beginUndoGroup("保存JSON");
@@ -321,11 +247,16 @@ function saveJSON() {
 
   // 获取所有选中图层的信息
   var layers = [];
+  // 创建一个记录图层源和编号的数组
+  var indexArr = [];
+  var curIndex = 1;
   for (var i = 0; i < selectedLayers.length; i++) {
     var layer = selectedLayers[i];
     var layerData = {
       layerName: layer.name,
       layerIndex: i + 1, // 使用选中的图层序列编号替换原始图层编号
+      layerType: getLayerType(layer),
+      customLayerIndex: getCustomIndex(layer, getLayerType(layer), indexArr, curIndex), // 调用自定义函数获取图层的额外编号
       blendingMode: layer.blendingMode,
       trackMatteType: layer.trackMatteType,
       opacity: layer.transform.opacity.value,
@@ -334,6 +265,7 @@ function saveJSON() {
       scale: [layer.transform.scale.value[0], layer.transform.scale.value[1]],
       effects: []
     };
+
     // 获取遮罩信息
     if (layer.mask instanceof MaskPropertyGroup) {
       layerData.hasMask = true;
@@ -345,15 +277,18 @@ function saveJSON() {
     }
 
     // 获取每个图层的特效信息
-    for (var j = 1; j <= layer.property("ADBE Effect Parade").numProperties; j++) {
-      var effect = layer.property("ADBE Effect Parade").property(j);
-      layerData.effects.push({
-        effectName: effect.name,
-        effects: effect.matchName,
-        effectEnabled: effect.enabled,
-        effectParameters: getEffectParameters(effect)
-      });
+    if (layer.property("ADBE Effect Parade") != null) {
+      for (var j = 1; j <= layer.property("ADBE Effect Parade").numProperties; j++) {
+        var effect = layer.property("ADBE Effect Parade").property(j);
+        layerData.effects.push({
+          effectName: effect.name,
+          effects: effect.matchName,
+          effectEnabled: effect.enabled,
+          effectParameters: getEffectParameters(effect)
+        });
+      }
     }
+
     layers.push(layerData);
   }
 
@@ -457,6 +392,120 @@ function getEffectParameters(effect, index) {
   return paramList;
 }
 
+//读取JSON
+function loadJSON() {
+  app.beginUndoGroup("读取JSON");
+
+  // 获取选中的图层
+  var selectedLayers = app.project.activeItem.selectedLayers;
+  if (selectedLayers.length === 0) {
+    alert("请选择至少一个图层。");
+    return;
+  }
+
+  var selectedFile = fileList.selection;
+  if (!selectedFile) {
+    alert("请选择列！");
+    return;
+  }
+
+  // 读取JSON文件中的图层信息
+  var loadFile = new File(jsonFolder.fsName + "/" + encodeURI(selectedFile.text + ".json"));
+  if (loadFile != null) {
+    loadFile.encoding = "UTF8";
+    loadFile.open("r");
+    var jsonData = loadFile.read();
+    var layers = JSON.parse(jsonData);
+    loadFile.close();
+
+    // 应用图层信息和特效参数
+    for (var i = 0; i < selectedLayers.length; i++) {
+      var layer = selectedLayers[i];
+      var layerData = layers[i];
+      // 设置 layer 名称属性
+      try {
+        if (layer.name != null && layerData.hasOwnProperty('layerName')) {
+          layer.name = layerData.layerName;
+        }
+      } catch (e) { }
+      // 设置 blendingMode 属性
+      try {
+        if (layer.blendingMode != null && layerData.hasOwnProperty('blendingMode')) {
+          layer.blendingMode = layerData.blendingMode;
+        }
+      } catch (e) { }
+      // 设置 trackMatteType 属性
+      try {
+        if (layer.trackMatteType != null && layerData.hasOwnProperty('trackMatteType')) {
+          layer.trackMatteType = layerData.trackMatteType;
+        }
+      } catch (e) { }
+      // 设置 opacity 属性
+      try {
+        if (layer.transform.opacity != null && layerData.hasOwnProperty('opacity')) {
+          layer.transform.opacity.setValue(layerData.opacity);
+        }
+      } catch (e) { }
+      // 设置 enabled 属性
+      try {
+        if (layer.enabled != null && layerData.hasOwnProperty('isHidden')) {
+          layer.enabled = !layerData.isHidden;
+        }
+      } catch (e) { }
+      // 设置 transform.scale 属性
+      try {
+        if (layer.transform.scale != null && layerData.hasOwnProperty('scale')) {
+          layer.transform.scale.setValue([layerData.scale[0], layerData.scale[1]]);
+        }
+      } catch (e) { }
+      // 设置 mask 属性
+      try {
+        if (layerData.hasOwnProperty('hasMask') && layerData.hasMask && layer.mask instanceof MaskPropertyGroup) {
+          if (layerData.hasOwnProperty('maskPath')) {
+            layer.mask.maskPath.setValue(layerData.maskPath);
+          }
+          // 可以在这里设置mask的其他属性
+        }
+      } catch (e) { }
+
+      for (var j = 0; j < layerData.effects.length; j++) {
+        var effectData = layerData.effects[j];
+        var effects = effectData.effects;
+        var effectName = effectData.effectName;
+        var effectEnabled = effectData.effectEnabled;
+        var effect = layer.property("ADBE Effect Parade").property(effectName);
+        if (!effect) {
+          effect = layer.property("ADBE Effect Parade").addProperty(effects);
+          effect.name = effectName;
+        }
+        effect.enabled = effectEnabled;
+        setEffectParameters(effect, effectData.effectParameters);
+      }
+
+      // 移动图层到指定的位置
+      try {
+        layer.moveTo(layerData.layerIndex);
+      } catch (e) {
+        // 忽略可能出现的错误
+      }
+    }
+
+    alert("已应用图层数据到所选合成中。");
+  }
+
+  app.endUndoGroup();
+
+  app.cancelTask(); // 取消当前任务
+  var scriptFile = new File($.fileName);
+  $.evalFile(scriptFile); // 重新加载当前脚本文件
+
+}
+
+// 生成排列图层
+function arrangeLayers() {
+  // ...
+}
+
 // 设置特效参数
 function setEffectParameters(effect, parameters) {
   for (var i = 0; i < parameters.length; i++) {
@@ -542,6 +591,91 @@ function setEffectParameters(effect, parameters) {
           // 如果出现错误就跳过该参数
         }
       }
+    }
+  }
+}
+
+// 获取图层类型
+function getLayerType(layer) {
+  if (layer instanceof AVLayer) {
+    if (layer.source instanceof CompItem) {
+      return 'CompLayer';
+    } else if (layer.source instanceof FootageItem) {
+      if (layer.adjustmentLayer) {
+        return 'AdjustmentLayer';
+      } else if (layer.source.mainSource instanceof SolidSource) {
+        // 根据图层颜色判断是否为空对象或纯色层
+        if (layer.source.mainSource.color[0] === 1 && layer.source.mainSource.color[1] === 1 && layer.source.mainSource.color[2] === 1) {
+          // 判断为 NullLayer
+          return 'NullLayer';
+        } else {
+          // 判断为 SolidLayer
+          return 'SolidLayer';
+        }
+      } else {
+        return 'FootageLayer';
+      }
+    }
+  } else if (layer instanceof CameraLayer) {
+    return 'CameraLayer';
+  } else if (layer instanceof LightLayer) {
+    return 'LightLayer';
+  } else if (layer instanceof ShapeLayer) {
+    return 'ShapeLayer';
+  } else if (layer instanceof TextLayer) {
+    return 'TextLayer';
+  } else if (layer instanceof NullLayer) {
+    if (layer.source instanceof CompItem) {
+      return 'CompLayer';
+    } else {
+      return 'NullLayer';
+    }
+  } else if (layer instanceof AdjustmentLayer) {
+    return 'AdjustmentLayer';
+  } else if (layer instanceof SolidSource) {
+    // 根据图层颜色判断是否为空对象或纯色层
+    if (layer.source.mainSource.color[0] === 1 && layer.source.mainSource.color[1] === 1 && layer.source.mainSource.color[2] === 1) {
+      // 判断为 NullLayer
+      return 'NullLayer';
+    } else {
+      // 判断为 SolidLayer
+      return 'SolidLayer';
+    }
+  } else if (layer instanceof CompItem) {
+    return 'CompLayer';
+  } else {
+    return 'UnknownLayer';
+  }
+}
+
+// 计算素材的额外编号
+function getCustomIndex(layer, layerType, indexArr, curIndex) {
+
+  // 检测是否为素材图层或合成图层，如果不是，则返回0
+  if (layerType !== 'FootageLayer' && layerType !== 'CompLayer') {
+    return 0;
+  }
+
+  // 检测该图层的图层源是否已经出现过
+  for (var i = 0; i < indexArr.length; i++) {
+    if (layer.source.name === indexArr[i].name && layer.source.parentFolder === indexArr[i].parentFolder) {
+      return indexArr[i].index;
+    }
+  }
+
+  // 如果图层源是第一次出现，则分配一个新的编号
+  while (true) {
+    var hasConflict = false;
+    for (var i = 0; i < indexArr.length; i++) {
+      if (curIndex === indexArr[i].index) {
+        hasConflict = true;
+        curIndex++;
+        break;
+      }
+    }
+    if (!hasConflict) {
+      indexArr.push({ name: layer.source.name, parentFolder: layer.source.parentFolder, index: curIndex });
+      return curIndex;
     }
   }
 }
