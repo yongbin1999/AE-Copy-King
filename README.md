@@ -1,2 +1,4 @@
-# AE-Copy-King
-复制AE图层信息和图层中的特效以及特效参数
+# AE复制大王
+## AE-Copy-King 
+复制AE图层信息保存成JSON并一键粘贴。
+## 功能
